@@ -1,210 +1,394 @@
 # Intelligent Media Processing Pipeline
 
-A lightweight FastAPI backend that accepts vehicle images, stores upload metadata, processes them asynchronously, and returns structured quality analysis results. The system demonstrates a practical, production-minded queue-based design without depending on heavy ML infrastructure.
+A lightweight **FastAPI backend** that accepts vehicle images, stores upload metadata, processes them asynchronously, and returns structured image-quality analysis results.
+
+The system demonstrates a practical, production-minded, queue-based architecture without depending on heavy ML infrastructure.
+
+---
 
 ## Architecture
 
-### Service flow
+### Service Flow
 
 1. Client uploads a file to `POST /api/v1/uploads`.
-2. The API validates the file type and writes the bytes to the local upload directory.
+2. The API validates the file type and writes the file to the local upload directory.
 3. A database row is created with a job ID, filename, content type, and file size.
-4. The job is queued in an in-memory background worker.
-5. The worker updates the status to `processing`, runs image heuristics, and stores analysis results in the DB.
-6. The client polls `GET /api/v1/jobs/{job_id}/status` and `GET /api/v1/jobs/{job_id}/results`.
+4. The job is added to an in-memory background queue.
+5. The worker updates the status to `processing`, runs image heuristics, and stores the analysis results in the database.
+6. The client polls the job status and results using:
 
-### Processing flow
+   * `GET /api/v1/jobs/{job_id}/status`
+   * `GET /api/v1/jobs/{job_id}/results`
 
-The worker performs a small set of heuristic checks against the uploaded image:
+### Processing Flow
 
-- blur detection
-- brightness / low-light detection
-- duplicate image detection using content similarity against prior uploads
-- screenshot heuristics
-- photo-of-photo heuristics
-- suspicious edit heuristics
-- number plate format validation (lightweight pattern check)
+The worker performs a set of lightweight and explainable heuristic checks against the uploaded image:
 
-These checks are intentionally heuristic and explainable. They are useful for triage and validation, even when they are not a full ML solution.
+* Blur detection
+* Brightness / low-light detection
+* Duplicate image detection using content similarity
+* Screenshot detection heuristics
+* Photo-of-photo detection heuristics
+* Suspicious edit detection heuristics
+* Number plate format validation using a lightweight pattern check
 
-### Queue strategy
+These checks are intentionally heuristic and explainable. They are useful for image triage and validation, although they are not intended to replace a full ML-based computer vision solution.
 
-The project uses an in-memory queue backed by a background thread. This keeps the local system simple and easy to run while still respecting the async requirement.
+---
 
-Why this approach:
+## Queue Strategy
 
-- minimal setup for local development
-- no external broker dependency
-- clear separation between API handling and processing
-- easy to swap to RabbitMQ, Redis Queue, SQS, or BullMQ in production
+The project uses an **in-memory queue backed by a background thread**.
 
-### Major design decisions
+This keeps the local system simple while still satisfying the asynchronous processing requirement.
 
-- SQLite is used by default for local execution and easy setup.
-- File storage occurs on disk, while metadata remains in the database.
-- The status model keeps the job lifecycle explicit: `queued` -> `processing` -> `completed` or `failed`.
-- Analysis results remain structured and easy to extend with more checks later.
-- The implementation favors explainable heuristics over opaque black-box inference.
+### Why This Approach?
 
-## Project structure
+* Minimal setup for local development
+* No external broker dependency
+* Clear separation between API handling and processing
+* Easy to replace with RabbitMQ, Redis Queue, AWS SQS, or BullMQ in production
 
-- `app/main.py` – API routes and job orchestration
-- `app/queue.py` – in-memory queue and background worker
-- `app/analysis.py` – image checks and heuristics
-- `app/models.py` – SQLAlchemy database models
-- `app/database.py` – DB engine and initialization
-- `tests/test_api.py` – API and async processing checks
+---
 
-## AI usage disclosure
+## Major Design Decisions
 
-I used AI to help with a few parts of this assignment:
+* **SQLite** is used by default for simple local execution.
+* Image files are stored on disk, while metadata is stored in the database.
+* The job lifecycle is explicitly maintained using:
 
-- scaffolding the FastAPI service structure
-- drafting the database schema and API routes
-- generating the image-check heuristics and status API design
-- writing the README and sample request payloads
+  * `queued`
+  * `processing`
+  * `completed`
+  * `failed`
+* Analysis results are stored in a structured format that can be extended with additional checks.
+* The implementation favors explainable heuristics instead of opaque black-box inference.
 
-What AI helped with:
+---
 
-- quickly producing a clean project skeleton
-- suggesting a realistic status model and queue architecture
-- validating naming and module organization
+## Project Structure
 
-Where AI output was wrong or incomplete:
+```text
+media-processing-pipeline/
+│
+├── app/
+│   ├── __init__.py
+│   ├── analysis.py
+│   ├── database.py
+│   ├── main.py
+│   ├── models.py
+│   ├── queue.py
+│   └── registry.py
+│
+├── tests/
+│   └── test_api.py
+│
+├── test_storage/
+│   └── sample vehicle images
+│
+├── .gitignore
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
+├── reset_upload_history.py
+└── README.md
+```
 
-- the initial model design had a reserved SQLAlchemy field name issue (`metadata`), which required manual debugging
-- some early heuristics were too simplistic and needed calibration to match the actual tests
-- the first version did not properly ensure SQLite tables existed before the upload endpoint inserted rows
+### Important Files
 
-How I validated AI-generated code:
+| File                | Description                           |
+| ------------------- | ------------------------------------- |
+| `app/main.py`       | API routes and job orchestration      |
+| `app/queue.py`      | In-memory queue and background worker |
+| `app/analysis.py`   | Image checks and heuristics           |
+| `app/models.py`     | SQLAlchemy database models            |
+| `app/database.py`   | Database engine and initialization    |
+| `app/registry.py`   | Duplicate detection registry          |
+| `tests/test_api.py` | API and asynchronous processing tests |
 
-- I ran the API test suite after each fix
-- I verified the job lifecycle end-to-end across upload → queue → processing → results
-- I checked the actual database behavior and corrected issues directly rather than trusting the generated code blindly
+---
+
+## AI Usage Disclosure
+
+AI was used to assist with selected parts of this assignment.
+
+### What AI Helped With
+
+* Scaffolding the FastAPI service structure
+* Drafting the database schema and API routes
+* Generating initial image-check heuristics
+* Designing the job status API
+* Writing the README and sample request payloads
+
+### How AI Helped
+
+AI assistance was mainly used to:
+
+* Quickly produce a clean project skeleton
+* Suggest a realistic status model and queue architecture
+* Improve naming and module organization
+* Generate initial implementation ideas
+
+### Where AI Output Was Wrong or Incomplete
+
+The generated code required manual debugging and validation.
+
+Some issues included:
+
+* The initial SQLAlchemy model used a reserved field name, `metadata`, which required correction.
+* Some early image heuristics were too simplistic and needed calibration against the actual tests.
+* The first version did not properly ensure that SQLite tables existed before the upload endpoint attempted to insert records.
+
+### How I Validated the AI-Generated Code
+
+I did not rely on AI-generated code without testing it.
+
+I validated the implementation by:
+
+* Running the API test suite after each major fix
+* Testing the complete upload-to-processing workflow
+* Verifying the job lifecycle:
+  `upload → queue → processing → results`
+* Checking the actual database behavior
+* Debugging and correcting issues manually
+
+---
 
 ## Trade-offs
 
-### Intentionally simplified
+### Intentionally Simplified
 
-- in-memory queue instead of distributed broker
-- heuristic-based checks instead of real OCR or deep CV models
-- SQLite instead of Postgres for local execution
-- a lightweight plate validation rather than a true vehicle-recognition system
+The following components were intentionally kept lightweight:
 
-### If more time were available
+| Component        | Current Implementation    | Production Alternative          |
+| ---------------- | ------------------------- | ------------------------------- |
+| Queue            | In-memory queue           | RabbitMQ / Redis / SQS / BullMQ |
+| Image Analysis   | Heuristic checks          | ML / Computer Vision models     |
+| Database         | SQLite                    | PostgreSQL                      |
+| Plate Validation | Lightweight pattern check | OCR / ANPR                      |
+| Storage          | Local disk                | Cloud object storage            |
 
-- replace the in-memory queue with RabbitMQ/Redis/BullMQ
-- add real OCR with Tesseract or cloud vision
-- add image hashing and stronger duplicate detection
-- add retry policies and dead-letter handling
-- add structured logging, metrics, and tracing
-- add rate limiting and per-user quotas
+### If More Time Were Available
 
-### Scalability concerns
+The following improvements could be implemented:
 
-- the current queue is single-process and in-memory, so it will not scale across multiple app instances
-- local disk storage is fine for demos but not for multi-node deployments
-- duplicate detection is only approximate and is kept in a simple in-memory registry
+* Replace the in-memory queue with RabbitMQ, Redis, or BullMQ
+* Add real OCR using Tesseract or cloud vision services
+* Add stronger image hashing and duplicate detection
+* Implement retry policies
+* Add dead-letter queue handling
+* Add structured logging
+* Add metrics and distributed tracing
+* Add API rate limiting
+* Add per-user upload quotas
 
-### Failure handling concerns
+---
 
-- failures are surfaced through the `failed` status and `failure_reason`
-- retries are not implemented yet
-- processing errors are currently logged by the worker, but production-grade alerting would be needed
+## Scalability Considerations
 
-## Interactive / bonus capabilities
+The current implementation is designed primarily for local and demo deployments.
 
-This project can be extended with several practical enhancements to make it more interactive and production-ready:
+Potential scalability limitations include:
 
-- Dashboard/UI: a simple web dashboard to upload images, display job status, and view results visually
-- Analytics: trends for blur rate, duplicate rate, low-light rate, and other quality issues over time
-- Confidence scoring: each image can carry a numeric confidence score summarizing the likelihood of a valid or suspicious upload
-- Retry mechanisms: automatic retry for transient failures or queue processing errors
-- Concurrency handling: worker pool support for multiple images being processed in parallel
-- Automated tests: API-level validation and regression tests for upload, status, result, and duplicate detection behavior
+* The queue is single-process and stored in memory.
+* The queue cannot be shared between multiple application instances.
+* Local disk storage is not suitable for multi-node deployments.
+* Duplicate detection is approximate and currently uses a simple registry.
 
-These are optional enhancements that improve usability, operational visibility, and reliability beyond the core backend flow.
+For production deployment, the queue could be moved to a distributed message broker and uploaded files could be stored in object storage such as Amazon S3 or equivalent services.
 
-## Running instructions
+---
 
-### Direct local run (copy/paste)
+## Failure Handling
 
-From the project folder:
+Processing failures are represented using the `failed` job status.
+
+The system stores:
+
+* Processing status
+* Failure reason
+* Processing results
+
+Currently:
+
+* Automatic retries are not implemented.
+* Processing errors are logged by the worker.
+* Production deployments would require structured logging and monitoring.
+* Alerting would be required for persistent processing failures.
+
+---
+
+## Interactive / Bonus Capabilities
+
+The project can be extended with several practical enhancements.
+
+### Dashboard / UI
+
+A web dashboard could allow users to:
+
+* Upload vehicle images
+* View processing status
+* View analysis results
+* Track previous uploads
+
+### Analytics
+
+The system could provide analytics for:
+
+* Blur rate
+* Duplicate rate
+* Low-light rate
+* Suspicious image rate
+* Processing success/failure rate
+
+### Confidence Scoring
+
+Each image can be assigned a numeric confidence score representing the likelihood of being a valid or suspicious upload.
+
+### Retry Mechanisms
+
+Automatic retries could be added for temporary processing failures.
+
+### Concurrency
+
+A worker pool could be introduced to process multiple images simultaneously.
+
+### Automated Testing
+
+The test suite can be expanded to include:
+
+* Upload validation
+* Job status
+* Result retrieval
+* Duplicate detection
+* Failure handling
+* Invalid file types
+* Large file handling
+
+---
+
+# Running the Project
+
+## Prerequisites
+
+Make sure you have:
+
+* Python 3.10+
+* pip
+* Git
+* Docker *(optional)*
+
+---
+
+## Option 1: Run Locally with Python
+
+### 1. Clone the Repository
 
 ```bash
-cd c:\Users\USER\OneDrive\Documents\assignment
+git clone https://github.com/Satish1483/media-processing-pipeline.git
+cd media-processing-pipeline
+```
+
+### 2. Create a Virtual Environment
+
+#### Windows
+
+```powershell
 python -m venv .venv
+```
+
+### 3. Activate the Virtual Environment
+
+```powershell
 .venv\Scripts\Activate.ps1
+```
+
+### 4. Install Dependencies
+
+```powershell
 pip install -r requirements.txt
+```
+
+### 5. Start the Application
+
+```powershell
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Then open the dashboard in a browser to use the upload UI:
+### 6. Open the Dashboard
+
+Open your browser and visit:
 
 ```text
 http://localhost:8000/dashboard
 ```
 
-If you want to inspect the API directly, the docs are also available at:
+### 7. Open API Documentation
+
+FastAPI automatically provides interactive API documentation at:
 
 ```text
 http://localhost:8000/docs
 ```
 
-### Local Python setup
+---
 
-1. Create and activate a virtual environment
-2. Install dependencies:
+# Running with Docker
+
+A minimal Docker setup is included in the project.
+
+### Build the Docker Image
 
 ```bash
-pip install -r requirements.txt
+docker build -t media-pipeline .
 ```
 
-3. Start the app:
+### Run the Container
 
 ```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-4. Test the API with sample requests using the endpoints below.
-
-### Docker
-
-A minimal Docker setup is also included:
-
-```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 docker run -p 8000:8000 media-pipeline
 ```
 
-or with Docker Compose:
+Alternatively, use Docker Compose:
 
 ```bash
 docker compose up --build
 ```
 
-After starting the app, open the dashboard at:
+After starting the application:
+
+**Dashboard**
 
 ```text
 http://localhost:8000/dashboard
 ```
 
-This is the main web interface for uploading images and tracking job status. The API docs remain available at:
+**API Documentation**
 
 ```text
 http://localhost:8000/docs
 ```
 
-## API examples
+---
 
-### Upload an image
+# API Documentation
+
+## 1. Upload an Image
+
+### Endpoint
+
+```http
+POST /api/v1/uploads
+```
+
+### Example
 
 ```bash
 curl -X POST "http://localhost:8000/api/v1/uploads" \
   -F "file=@/path/to/vehicle.jpg;type=image/jpeg"
 ```
 
-Example response:
+### Example Response
 
 ```json
 {
@@ -214,13 +398,23 @@ Example response:
 }
 ```
 
-### Check job status
+---
+
+## 2. Check Job Status
+
+### Endpoint
+
+```http
+GET /api/v1/jobs/{job_id}/status
+```
+
+### Example
 
 ```bash
 curl "http://localhost:8000/api/v1/jobs/b45e4d7c-0c4f-4f68-8c20-c0f4009dfe3f/status"
 ```
 
-Example response:
+### Example Response
 
 ```json
 {
@@ -232,19 +426,32 @@ Example response:
 }
 ```
 
-### Fetch job results
+---
+
+## 3. Fetch Job Results
+
+### Endpoint
+
+```http
+GET /api/v1/jobs/{job_id}/results
+```
+
+### Example
 
 ```bash
 curl "http://localhost:8000/api/v1/jobs/b45e4d7c-0c4f-4f68-8c20-c0f4009dfe3f/results"
 ```
 
-Example response:
+### Example Response
 
 ```json
 {
   "job_id": "b45e4d7c-0c4f-4f68-8c20-c0f4009dfe3f",
   "status": "completed",
-  "issues": ["blur", "low_light"],
+  "issues": [
+    "blur",
+    "low_light"
+  ],
   "checks": [
     {
       "name": "blur",
@@ -254,38 +461,84 @@ Example response:
     }
   ],
   "summary": {
-    "dimensions": {"width": 1200, "height": 800},
+    "dimensions": {
+      "width": 1200,
+      "height": 800
+    },
     "blur_score": 18.4,
     "brightness": 72.3
   }
 }
 ```
 
-### Fetch failure reason
+---
+
+## 4. Fetch Failure Reason
+
+### Endpoint
+
+```http
+GET /api/v1/jobs/{job_id}/failure
+```
+
+### Example
 
 ```bash
 curl "http://localhost:8000/api/v1/jobs/b45e4d7c-0c4f-4f68-8c20-c0f4009dfe3f/failure"
 ```
 
-## Assumptions
+---
 
-- the system is designed for local and demo deployments first, not enterprise-scale throughput
-- uploaded files are vehicle or field images, so the analysis focuses on document-style and scene-quality heuristics
-- exact OCR or plate recognition is intentionally approximated because the assignment emphasizes engineering quality and system design over model accuracy
+# Assumptions
 
-## Testing
+The system is designed primarily for local and demo deployments rather than enterprise-scale throughput.
 
-The project includes a small automated test suite covering:
+The main assumptions are:
 
-- upload acceptance
-- async job completion
-- result fetch behavior
-- duplicate detection heuristics
+* Uploaded files are vehicle or field images.
+* Image analysis focuses on quality and validation heuristics.
+* Exact OCR and number-plate recognition are intentionally approximated.
+* The assignment emphasizes engineering quality and system design rather than ML model accuracy.
+* SQLite and local storage are sufficient for the demonstration environment.
 
-Run tests with:
+---
+
+# Testing
+
+The project includes an automated test suite covering:
+
+* Upload acceptance
+* Asynchronous job completion
+* Result retrieval
+* Duplicate detection heuristics
+
+Run the tests using:
 
 ```bash
 pytest -q
 ```
-#   a s s i g n m e n t  
- 
+
+---
+
+# Future Improvements
+
+Potential future improvements include:
+
+1. Distributed background processing
+2. Cloud-based file storage
+3. PostgreSQL database
+4. Production-grade OCR / ANPR
+5. Stronger duplicate detection
+6. Retry and dead-letter mechanisms
+7. Worker pool and concurrency support
+8. Authentication and authorization
+9. API rate limiting
+10. Monitoring and observability
+11. CI/CD integration
+12. Production deployment using containers
+
+---
+
+## License
+
+This project was developed as part of a technical case study and is intended for educational and demonstration purposes.
