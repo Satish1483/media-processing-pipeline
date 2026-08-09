@@ -1,0 +1,11 @@
+services:
+  api:
+    build: .
+    container_name: media-pipeline-api
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: sqlite:///./media_pipeline.db
+      UPLOAD_DIR: ./uploads
+    volumes:
+      - .:/app
